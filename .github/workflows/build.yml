@@ -30,6 +30,12 @@ jobs:
       - name: Build Linux
         run: flutter build linux --release
 
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: my_pdf_helper-linux-${{ github.ref_name }}
+          path: build/linux/x64/release/bundle/
+
   build-web:
     runs-on: ubuntu-latest
 
@@ -48,6 +54,12 @@ jobs:
       - name: Build Web
         run: flutter build web --release
 
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: my_pdf_helper-web-${{ github.ref_name }}
+          path: build/web/
+
   build-windows:
     runs-on: windows-latest
 
@@ -65,5 +77,11 @@ jobs:
 
       - name: Build Windows
         run: flutter build windows --release
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: my_pdf_helper-windows-${{ github.ref_name }}
+          path: build/windows/runner/Release/
 
 

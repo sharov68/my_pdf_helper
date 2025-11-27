@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'download_helper.dart' as download_helper;
 
 void main() {
@@ -43,6 +44,35 @@ class HomeScreen extends StatelessWidget {
 
   static const double _headerFooterHeight = kTextTabBarHeight;
   static const Color _footerColor = Color(0xFFFFF3E0);
+  static final Uri _releasesUri = Uri.parse(
+    'https://github.com/sharov68/my_pdf_helper/releases',
+  );
+
+  Future<void> _openReleases(BuildContext context) async {
+    final canLaunch = await canLaunchUrl(_releasesUri);
+
+    if (!canLaunch) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Не удалось открыть страницу релизов.'),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+      return;
+    }
+
+    final ok = await launchUrl(_releasesUri);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось открыть страницу релизов.'),
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +109,22 @@ class HomeScreen extends StatelessWidget {
               height: _headerFooterHeight,
               child: Container(
                 color: _footerColor,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Center(
+                  child: kIsWeb
+                      ? TextButton.icon(
+                          onPressed: () => _openReleases(context),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.brown.shade700,
+                          ),
+                          icon: const Icon(
+                            Icons.open_in_new,
+                            size: 16,
+                          ),
+                          label: const Text('Релизы на GitHub'),
+                        )
+                      : const SizedBox.shrink(),
+                ),
               ),
             ),
           ],
