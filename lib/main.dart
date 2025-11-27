@@ -49,10 +49,13 @@ class HomeScreen extends StatelessWidget {
   );
 
   Future<void> _openReleases(BuildContext context) async {
-    final canLaunch = await canLaunchUrl(_releasesUri);
+    try {
+      final ok = await launchUrl(
+        _releasesUri,
+        webOnlyWindowName: '_blank',
+      );
 
-    if (!canLaunch) {
-      if (context.mounted) {
+      if (!ok && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Не удалось открыть страницу релизов.'),
@@ -60,15 +63,13 @@ class HomeScreen extends StatelessWidget {
           ),
         );
       }
-      return;
-    }
+    } catch (e) {
+      if (!context.mounted) return;
 
-    final ok = await launchUrl(_releasesUri);
-    if (!ok && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Не удалось открыть страницу релизов.'),
-          duration: Duration(seconds: 5),
+        SnackBar(
+          content: Text('Ошибка при открытии страницы релизов: $e'),
+          duration: const Duration(seconds: 5),
         ),
       );
     }
