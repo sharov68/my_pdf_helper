@@ -1,9 +1,12 @@
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'download_helper.dart' as download_helper;
 
 void main() {
   runApp(const MyApp());
@@ -99,6 +102,10 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
   bool _isLoadingInfo = false;
   bool _isSplitting = false;
 
+  // Для веба храним байты исходного файла, чтобы можно было разбить его
+  // целиком в памяти и отдать пользователю через скачивание.
+  Uint8List? _fileBytesWeb;
+
   final _formKey = GlobalKey<FormState>();
   final List<_PageRange> _ranges = [
     _PageRange(),
@@ -123,36 +130,76 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
       }
 
       final file = result.files.single;
-      final path = file.path;
 
-      if (path == null) {
-        setState(() {
-          _isLoadingInfo = false;
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Не удалось получить путь к выбранному файлу.'),
-              duration: Duration(minutes: 5),
-            ),
-          );
+      // На вебе у FilePicker нет пути к файлу, доступны только байты.
+      // См. FAQ плагина: https://github.com/miguelpruivo/flutter_file_picker/wiki/FAQ
+      if (kIsWeb) {
+        final bytes = file.bytes;
+
+        if (bytes == null) {
+          setState(() {
+            _isLoadingInfo = false;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Браузер не передал содержимое файла. '
+                  'Попробуйте выбрать файл ещё раз или использовать другой браузер.',
+                ),
+                duration: Duration(minutes: 5),
+              ),
+            );
+          }
+          return;
         }
-        return;
+
+        final document = PdfDocument(inputBytes: bytes);
+        final pageCount = document.pages.count;
+        document.dispose();
+
+        setState(() {
+          // В веб‑версии настоящего пути к файлу нет.
+          _filePath = null;
+          _fileName = file.name;
+          _pageCount = pageCount;
+          _fileBytesWeb = bytes;
+          _ranges
+            ..clear()
+            ..add(_PageRange(from: 1, to: pageCount));
+        });
+      } else {
+        final path = file.path;
+
+        if (path == null) {
+          setState(() {
+            _isLoadingInfo = false;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Не удалось получить путь к выбранному файлу.'),
+                duration: Duration(minutes: 5),
+              ),
+            );
+          }
+          return;
+        }
+
+        final bytes = await File(path).readAsBytes();
+        final document = PdfDocument(inputBytes: bytes);
+        final pageCount = document.pages.count;
+        document.dispose();
+
+        setState(() {
+          _filePath = path;
+          _fileName = p.basename(path);
+          _pageCount = pageCount;
+          _ranges
+            ..clear()
+            ..add(_PageRange(from: 1, to: pageCount));
+        });
       }
-
-      final bytes = await File(path).readAsBytes();
-      final document = PdfDocument(inputBytes: bytes);
-      final pageCount = document.pages.count;
-      document.dispose();
-
-      setState(() {
-        _filePath = path;
-        _fileName = p.basename(path);
-        _pageCount = pageCount;
-        _ranges
-          ..clear()
-          ..add(_PageRange(from: 1, to: pageCount));
-      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -178,16 +225,6 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
   }
 
   Future<void> _splitPdf() async {
-    if (_filePath == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Сначала выберите PDF-файл.'),
-          duration: Duration(minutes: 5),
-        ),
-      );
-      return;
-    }
-
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -211,6 +248,184 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Укажите хотя бы один корректный диапазон страниц.'),
+          duration: Duration(minutes: 5),
+        ),
+      );
+      return;
+    }
+
+    if (kIsWeb) {
+      // Веб‑режим: всё разбиение выполняем в памяти и выдаём файлы
+      // пользователю через скачивание, не трогая локальную файловую систему.
+      await _splitPdfWeb(validRanges);
+      return;
+    }
+
+    if (_filePath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Сначала выберите PDF-файл.'),
+          duration: Duration(minutes: 5),
+        ),
+      );
+      return;
+    }
+
+    await _splitPdfDesktop(validRanges);
+  }
+
+  Future<void> _splitPdfWeb(List<_PageRange> validRanges) async {
+    if (_fileBytesWeb == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Сначала выберите PDF-файл.'),
+          duration: Duration(minutes: 5),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSplitting = true;
+    });
+
+    // Даём фреймворку отрисовать изменение UI (кнопка, индикатор прогресса)
+    // перед началом тяжёлой синхронной работы.
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    try {
+      final sourceBytes = _fileBytesWeb!;
+      final document = PdfDocument(inputBytes: sourceBytes);
+      final totalPages = document.pages.count;
+
+      final baseName = _fileName != null
+          ? p.basenameWithoutExtension(_fileName!)
+          : 'document';
+
+      var index = 1;
+      final results = <_SplitResult>[];
+
+      for (final range in validRanges) {
+        final from = range.from!;
+        final to = range.to!;
+
+        if (from > totalPages) {
+          continue;
+        }
+
+        final lastPage = to > totalPages ? totalPages : to;
+
+        final outDoc = PdfDocument();
+        outDoc.pageSettings.margins.all = 0;
+
+        for (var pageNum = from; pageNum <= lastPage; pageNum++) {
+          final originalPage = document.pages[pageNum - 1];
+          final template = originalPage.createTemplate();
+          final newPage = outDoc.pages.add();
+          final pageSize = newPage.getClientSize();
+          newPage.graphics.drawPdfTemplate(
+            template,
+            const Offset(0, 0),
+            Size(pageSize.width, pageSize.height),
+          );
+        }
+
+        final outBytes = await outDoc.save();
+        outDoc.dispose();
+
+        final indexStr = index.toString().padLeft(3, '0');
+        final fileName =
+            '${baseName}_$indexStr' '_${from}-${lastPage}.pdf'; // e.g. doc_001_1-3.pdf
+
+        results.add(_SplitResult(fileName: fileName, bytes: outBytes));
+        index++;
+      }
+
+      document.dispose();
+
+      if (results.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Не удалось создать файлы по указанным диапазонам. Проверьте номера страниц.',
+              ),
+              duration: Duration(minutes: 5),
+            ),
+          );
+        }
+        return;
+      }
+
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Файлы готовы'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Нажмите на файл, чтобы скачать его:'),
+                  const SizedBox(height: 12),
+                  ...results.map(
+                    (result) => TextButton.icon(
+                      onPressed: () => download_helper.downloadBytes(
+                        result.fileName,
+                        result.bytes,
+                      ),
+                      icon: const Icon(Icons.download),
+                      label: Text(result.fileName),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Закрыть'),
+              ),
+            ],
+          );
+        },
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'PDF успешно разбит. Файлов для скачивания: ${results.length}',
+          ),
+          duration: const Duration(seconds: 10),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при разбиении PDF: $e'),
+            duration: const Duration(minutes: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSplitting = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _splitPdfDesktop(List<_PageRange> validRanges) async {
+    if (_filePath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Сначала выберите PDF-файл.'),
           duration: Duration(minutes: 5),
         ),
       );
@@ -272,6 +487,9 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
     setState(() {
       _isSplitting = true;
     });
+
+    // Даём отрисоваться изменениям UI перед началом тяжёлой работы.
+    await Future<void>.delayed(const Duration(milliseconds: 100));
 
     try {
       final sourceBytes = await sourceFile.readAsBytes();
@@ -423,6 +641,25 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
               ),
             ),
           ),
+          if (_isLoadingInfo || _isSplitting) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  _isLoadingInfo
+                      ? 'Читаем файл...'
+                      : 'Разбиваем PDF, подождите...',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ],
           if (_fileName != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -552,6 +789,16 @@ class _PageRange {
   int? to;
 }
 
+class _SplitResult {
+  _SplitResult({
+    required this.fileName,
+    required this.bytes,
+  });
+
+  final String fileName;
+  final List<int> bytes;
+}
+
 class PdfMergeTab extends StatefulWidget {
   const PdfMergeTab({super.key});
 
@@ -566,6 +813,13 @@ class _PdfMergeTabState extends State<PdfMergeTab> {
   bool _isMerging = false;
 
   Future<void> _pickFolderAndScan() async {
+    // На вебе нет доступа к локальной файловой системе и выбору папки,
+    // поэтому вместо этого позволяем выбрать несколько файлов через FilePicker.
+    if (kIsWeb) {
+      await _pickFilesWebAndMaybeMerge();
+      return;
+    }
+
     try {
       setState(() {
         _isScanning = true;
@@ -655,6 +909,73 @@ class _PdfMergeTabState extends State<PdfMergeTab> {
     }
   }
 
+  Future<void> _pickFilesWebAndMaybeMerge() async {
+    try {
+      setState(() {
+        _isScanning = true;
+      });
+
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        withData: true,
+      );
+
+      if (!mounted) return;
+
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+
+      final pdfFiles = result.files
+          .where((f) => (f.bytes != null && f.bytes!.isNotEmpty))
+          .toList();
+
+      if (pdfFiles.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Не удалось получить содержимое выбранных файлов. '
+              'Попробуйте ещё раз или используйте другой браузер.',
+            ),
+            duration: Duration(minutes: 5),
+          ),
+        );
+        return;
+      }
+
+      pdfFiles.sort(
+        (a, b) => a.name.toLowerCase().compareTo(
+              b.name.toLowerCase(),
+            ),
+      );
+
+      final shouldMerge = await _showFilesDialogWeb(pdfFiles);
+
+      if (!mounted || shouldMerge != true) {
+        return;
+      }
+
+      await _mergeFilesWeb(pdfFiles);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при выборе файлов: $e'),
+            duration: const Duration(minutes: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
+      }
+    }
+  }
+
   Future<bool?> _showFilesDialog(String dirPath, List<File> pdfFiles) {
     return showDialog<bool>(
       context: context,
@@ -684,6 +1005,49 @@ class _PdfMergeTabState extends State<PdfMergeTab> {
                     itemBuilder: (context, index) {
                       final file = pdfFiles[index];
                       return Text('• ${p.basename(file.path)}');
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Слить'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<bool?> _showFilesDialogWeb(List<PlatformFile> pdfFiles) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Найденные PDF‑файлы'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Файлов: ${pdfFiles.length}'),
+                const SizedBox(height: 12),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: pdfFiles.length,
+                    itemBuilder: (context, index) {
+                      final file = pdfFiles[index];
+                      return Text('• ${file.name}');
                     },
                   ),
                 ),
@@ -823,6 +1187,128 @@ class _PdfMergeTabState extends State<PdfMergeTab> {
     }
   }
 
+  Future<void> _mergeFilesWeb(List<PlatformFile> pdfFiles) async {
+    setState(() {
+      _isMerging = true;
+    });
+
+    // Даём отрисоваться изменению состояния кнопки перед тяжёлой работой.
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    try {
+      if (pdfFiles.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Нет файлов для слияния.'),
+            duration: Duration(seconds: 10),
+          ),
+        );
+        return;
+      }
+
+      final mergedDocument = PdfDocument();
+      mergedDocument.pageSettings.margins.all = 0;
+
+      for (final file in pdfFiles) {
+        final bytes = file.bytes;
+        if (bytes == null || bytes.isEmpty) {
+          continue;
+        }
+
+        final document = PdfDocument(inputBytes: bytes);
+        final pageCount = document.pages.count;
+
+        for (var i = 0; i < pageCount; i++) {
+          final originalPage = document.pages[i];
+          final template = originalPage.createTemplate();
+          final newPage = mergedDocument.pages.add();
+          final pageSize = newPage.getClientSize();
+          newPage.graphics.drawPdfTemplate(
+            template,
+            const Offset(0, 0),
+            Size(pageSize.width, pageSize.height),
+          );
+        }
+
+        document.dispose();
+      }
+
+      final outBytes = await mergedDocument.save();
+      mergedDocument.dispose();
+
+      if (!mounted) return;
+
+      if (outBytes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Не удалось создать объединённый файл.'),
+            duration: Duration(minutes: 5),
+          ),
+        );
+        return;
+      }
+
+      final firstName = pdfFiles.first.name;
+      final baseName = p.basenameWithoutExtension(firstName);
+      final outFileName = '${baseName}_merged.pdf';
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Файл готов'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Нажмите, чтобы скачать объединённый файл:'),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () => download_helper.downloadBytes(
+                    outFileName,
+                    outBytes,
+                  ),
+                  icon: const Icon(Icons.download),
+                  label: Text(outFileName),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Закрыть'),
+              ),
+            ],
+          );
+        },
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Файлы успешно слиты. Итоговый файл: $outFileName',
+          ),
+          duration: const Duration(seconds: 10),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при слиянии файлов: $e'),
+            duration: const Duration(minutes: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMerging = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -836,7 +1322,9 @@ class _PdfMergeTabState extends State<PdfMergeTab> {
               onPressed: _isScanning || _isMerging ? null : _pickFolderAndScan,
               icon: const Icon(Icons.folder),
               label: Text(
-                _isScanning ? 'Сканирование...' : 'Выбрать папку',
+                _isScanning
+                    ? 'Сканирование...'
+                    : (kIsWeb ? 'Выбрать файлы' : 'Выбрать папку'),
               ),
             ),
           ),
