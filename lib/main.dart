@@ -67,12 +67,7 @@ class HomeScreen extends StatelessWidget {
               child: TabBarView(
                 children: [
                   const PdfSplitTab(),
-                  Center(
-                    child: Text(
-                      'Демо‑контент для второго таба',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
+                  const PdfMergeTab(),
                 ],
               ),
             ),
@@ -555,5 +550,320 @@ class _PageRange {
 
   int? from;
   int? to;
+}
+
+class PdfMergeTab extends StatefulWidget {
+  const PdfMergeTab({super.key});
+
+  @override
+  State<PdfMergeTab> createState() => _PdfMergeTabState();
+}
+
+class _PdfMergeTabState extends State<PdfMergeTab> {
+  String? _directoryPath;
+  int _lastFoundFilesCount = 0;
+  bool _isScanning = false;
+  bool _isMerging = false;
+
+  Future<void> _pickFolderAndScan() async {
+    try {
+      setState(() {
+        _isScanning = true;
+      });
+
+      final dirPath = await FilePicker.platform.getDirectoryPath();
+
+      if (!mounted) return;
+
+      if (dirPath == null) {
+        setState(() {
+          _isScanning = false;
+        });
+        return;
+      }
+
+      final directory = Directory(dirPath);
+      if (!await directory.exists()) {
+        setState(() {
+          _isScanning = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Выбранная папка недоступна.'),
+            duration: Duration(minutes: 5),
+          ),
+        );
+        return;
+      }
+
+      final entities = directory.listSync().whereType<File>().toList();
+      final pdfFiles = entities
+          .where(
+            (f) => p.extension(f.path).toLowerCase() == '.pdf',
+          )
+          .toList();
+
+      if (pdfFiles.isEmpty) {
+        setState(() {
+          _directoryPath = dirPath;
+          _lastFoundFilesCount = 0;
+          _isScanning = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('В выбранной папке нет PDF‑файлов.'),
+            duration: Duration(seconds: 10),
+          ),
+        );
+        return;
+      }
+
+      pdfFiles.sort(
+        (a, b) => p.basename(a.path).toLowerCase().compareTo(
+              p.basename(b.path).toLowerCase(),
+            ),
+      );
+
+      setState(() {
+        _directoryPath = dirPath;
+        _lastFoundFilesCount = pdfFiles.length;
+        _isScanning = false;
+      });
+
+      final shouldMerge = await _showFilesDialog(dirPath, pdfFiles);
+
+      if (!mounted || shouldMerge != true) {
+        return;
+      }
+
+      await _mergeFiles(dirPath, pdfFiles);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при сканировании папки: $e'),
+            duration: const Duration(minutes: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
+      }
+    }
+  }
+
+  Future<bool?> _showFilesDialog(String dirPath, List<File> pdfFiles) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Найденные PDF‑файлы'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Папка:'),
+                const SizedBox(height: 4),
+                Text(
+                  dirPath,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                Text('Файлов: ${pdfFiles.length}'),
+                const SizedBox(height: 12),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: pdfFiles.length,
+                    itemBuilder: (context, index) {
+                      final file = pdfFiles[index];
+                      return Text('• ${p.basename(file.path)}');
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Слить'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _mergeFiles(String dirPath, List<File> pdfFiles) async {
+    setState(() {
+      _isMerging = true;
+    });
+
+    try {
+      if (pdfFiles.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Нет файлов для слияния.'),
+            duration: Duration(seconds: 10),
+          ),
+        );
+        return;
+      }
+
+      // Папка для результата: ../out_merged относительно выбранной папки.
+      final outDirPath = p.normalize(p.join(dirPath, '..', 'out_merged'));
+      final outDir = Directory(outDirPath);
+      if (!await outDir.exists()) {
+        await outDir.create(recursive: true);
+      }
+
+      final firstFile = pdfFiles.first;
+      final outFileName = p.basename(firstFile.path);
+      final outPath = p.join(outDirPath, outFileName);
+
+      final mergedDocument = PdfDocument();
+      mergedDocument.pageSettings.margins.all = 0;
+
+      for (final file in pdfFiles) {
+        final bytes = await file.readAsBytes();
+        final document = PdfDocument(inputBytes: bytes);
+        final pageCount = document.pages.count;
+
+        for (var i = 0; i < pageCount; i++) {
+          final originalPage = document.pages[i];
+          final template = originalPage.createTemplate();
+          final newPage = mergedDocument.pages.add();
+          final pageSize = newPage.getClientSize();
+          newPage.graphics.drawPdfTemplate(
+            template,
+            const Offset(0, 0),
+            Size(pageSize.width, pageSize.height),
+          );
+        }
+
+        document.dispose();
+      }
+
+      final outBytes = await mergedDocument.save();
+      mergedDocument.dispose();
+
+      final outFile = File(outPath);
+      await outFile.writeAsBytes(outBytes, flush: true);
+
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Файл создан'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Папка:'),
+                const SizedBox(height: 4),
+                Text(
+                  outDirPath,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                const Text('Файл:'),
+                const SizedBox(height: 4),
+                Text(
+                  p.basename(outPath),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Файлы успешно слиты. Итоговый файл: ${p.basename(outPath)}',
+          ),
+          duration: const Duration(seconds: 10),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при слиянии файлов: $e'),
+            duration: const Duration(minutes: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMerging = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _isScanning || _isMerging ? null : _pickFolderAndScan,
+              icon: const Icon(Icons.folder),
+              label: Text(
+                _isScanning ? 'Сканирование...' : 'Выбрать папку',
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_directoryPath != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Последняя выбранная папка:',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _directoryPath!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Найдено PDF‑файлов: $_lastFoundFilesCount',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
 }
 
