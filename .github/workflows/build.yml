@@ -6,6 +6,9 @@ on:
       - 'v*'          # запуск при пуше тегов вида v1.0.0
   workflow_dispatch:  # плюс ручной запуск из вкладки Actions
 
+permissions:
+  contents: write     # нужно для публикации релизов
+
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -22,7 +25,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev zip
 
       - name: Flutter pub get
         run: flutter pub get
@@ -35,6 +38,20 @@ jobs:
         with:
           name: my_pdf_helper-linux-${{ github.ref_name }}
           path: build/linux/x64/release/bundle/
+
+      - name: Pack Linux release zip
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cd build/linux/x64/release
+          zip -r ../../../my_pdf_helper-linux-${GITHUB_REF_NAME}.zip bundle
+
+      - name: Upload Linux asset to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/my_pdf_helper-linux-${{ github.ref_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-web:
     runs-on: ubuntu-latest
@@ -60,6 +77,20 @@ jobs:
           name: my_pdf_helper-web-${{ github.ref_name }}
           path: build/web/
 
+      - name: Pack Web release zip
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cd build
+          zip -r my_pdf_helper-web-${GITHUB_REF_NAME}.zip web
+
+      - name: Upload Web asset to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/my_pdf_helper-web-${{ github.ref_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-windows:
     runs-on: windows-latest
 
@@ -83,5 +114,19 @@ jobs:
         with:
           name: my_pdf_helper-windows-${{ github.ref_name }}
           path: build/windows/x64/runner/Release/
+
+      - name: Pack Windows release zip
+        if: startsWith(github.ref, 'refs/tags/')
+        run: >
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath
+          build/my_pdf_helper-windows-${env:GITHUB_REF_NAME}.zip
+
+      - name: Upload Windows asset to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/my_pdf_helper-windows-${{ github.ref_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
