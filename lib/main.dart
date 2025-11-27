@@ -6,8 +6,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'download_helper.dart' as download_helper;
+import 'releases_link.dart';
 
 void main() {
   runApp(const MyApp());
@@ -44,35 +44,9 @@ class HomeScreen extends StatelessWidget {
 
   static const double _headerFooterHeight = kTextTabBarHeight;
   static const Color _footerColor = Color(0xFFFFF3E0);
-  static final Uri _releasesUri = Uri.parse(
-    'https://github.com/sharov68/my_pdf_helper/releases',
-  );
 
   Future<void> _openReleases(BuildContext context) async {
-    try {
-      final ok = await launchUrl(
-        _releasesUri,
-        webOnlyWindowName: '_blank',
-      );
-
-      if (!ok && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Не удалось открыть страницу релизов.'),
-            duration: Duration(seconds: 5),
-          ),
-        );
-      }
-    } catch (e) {
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Ошибка при открытии страницы релизов: $e'),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    }
+    await openReleasesLink(context);
   }
 
   @override
