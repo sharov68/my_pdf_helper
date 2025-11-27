@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=My PDF Helper
+GenericName=PDF Helper
+Comment=Utility for working with PDF files
+Exec=/home/ubuntu/projects_my/my_pdf_helper/build/linux/x64/debug/bundle/my_pdf_helper
+Icon=my_pdf_helper
+Terminal=false
+Categories=Utility;Office;
+StartupWMClass=com.example.my_pdf_helper
+

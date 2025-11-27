@@ -100,6 +100,12 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# Install application icon into the bundle so it can be used by the GTK window.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../icons/icon_512.png"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
+  RENAME "app_icon.png"
+  COMPONENT Runtime)
+
 foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
   install(FILES "${bundled_library}"
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
