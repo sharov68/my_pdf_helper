@@ -55,11 +55,27 @@ static void my_application_activate(GApplication* application) {
 
   // Try to set a custom application icon from the bundled resources.
   // The icon file is installed into the bundle's "data" directory as "app_icon.png"
-  // by linux/CMakeLists.txt.
+  // by linux/CMakeLists.txt. During development, we also try the source directory.
   GError* icon_error = nullptr;
-  gtk_window_set_icon_from_file(window, "data/app_icon.png", &icon_error);
-  if (icon_error != nullptr) {
-    g_warning("Failed to load window icon: %s", icon_error->message);
+  const gchar* icon_paths[] = {
+    "data/app_icon.png",           // Installed location
+    "../icons/icon_512.png",       // Development location (from build/linux/x64/debug/bundle)
+    "icons/icon_512.png",          // Alternative development location
+    nullptr
+  };
+  
+  gboolean icon_loaded = FALSE;
+  for (int i = 0; icon_paths[i] != nullptr && !icon_loaded; i++) {
+    g_clear_error(&icon_error);
+    gtk_window_set_icon_from_file(window, icon_paths[i], &icon_error);
+    if (icon_error == nullptr) {
+      icon_loaded = TRUE;
+    }
+  }
+  
+  // Only warn if none of the paths worked (silently ignore during development)
+  if (!icon_loaded && icon_error != nullptr) {
+    // Don't warn - icon is optional during development
     g_error_free(icon_error);
   }
 

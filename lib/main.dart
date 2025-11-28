@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, compute;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -11,6 +11,39 @@ import 'releases_link.dart';
 
 void main() {
   runApp(const MyApp());
+}
+
+/// Открывает папку в файловом менеджере системы (только для десктопа).
+Future<void> _openFolderInFileManager(String folderPath) async {
+  if (kIsWeb) return;
+
+  try {
+    if (Platform.isLinux) {
+      // Используем dbus-send для вызова файлового менеджера через D-Bus
+      // Это более надёжный способ, чем xdg-open
+      final uri = 'file://$folderPath';
+      final result = await Process.run('dbus-send', [
+        '--session',
+        '--dest=org.freedesktop.FileManager1',
+        '--type=method_call',
+        '/org/freedesktop/FileManager1',
+        'org.freedesktop.FileManager1.ShowFolders',
+        'array:string:$uri',
+        'string:',
+      ]);
+      
+      // Если dbus-send не сработал, пробуем напрямую вызвать nautilus
+      if (result.exitCode != 0) {
+        await Process.run('nautilus', [folderPath]);
+      }
+    } else if (Platform.isWindows) {
+      await Process.run('explorer', [folderPath]);
+    } else if (Platform.isMacOS) {
+      await Process.run('open', [folderPath]);
+    }
+  } catch (e) {
+    // Если ничего не сработало, игнорируем ошибку
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -39,14 +72,27 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
   static const double _headerFooterHeight = kTextTabBarHeight;
   static const Color _footerColor = Color(0xFFFFF3E0);
 
+  bool _isProcessing = false;
+
   Future<void> _openReleases(BuildContext context) async {
     await openReleasesLink(context);
+  }
+
+  void _setProcessing(bool value) {
+    setState(() {
+      _isProcessing = value;
+    });
   }
 
   @override
@@ -54,54 +100,80 @@ class HomeScreen extends StatelessWidget {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        body: Column(
+        body: Stack(
           children: [
-            // Хедер: только табы, высота как у TabBar
-            SizedBox(
-              height: _headerFooterHeight,
-              child: Material(
-                color: Theme.of(context).appBarTheme.backgroundColor,
-                child: const TabBar(
-                  indicatorColor: Colors.white,
-                  tabs: [
-                    Tab(text: 'Разбиение PDF'),
-                    Tab(text: 'Слияние PDF'),
-                  ],
+            Column(
+              children: [
+                // Хедер: только табы, высота как у TabBar
+                SizedBox(
+                  height: _headerFooterHeight,
+                  child: Material(
+                    color: Theme.of(context).appBarTheme.backgroundColor,
+                    child: const TabBar(
+                      indicatorColor: Colors.white,
+                      tabs: [
+                        Tab(text: 'Разбиение PDF'),
+                        Tab(text: 'Слияние PDF'),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+                // Основная область контента
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      PdfSplitTab(onProcessingChanged: _setProcessing),
+                      const PdfMergeTab(),
+                    ],
+                  ),
+                ),
+                // Футер той же высоты, пока пустой
+                SizedBox(
+                  height: _headerFooterHeight,
+                  child: Container(
+                    color: _footerColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Center(
+                      child: kIsWeb
+                          ? TextButton.icon(
+                              onPressed: () => _openReleases(context),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.brown.shade700,
+                              ),
+                              icon: const Icon(
+                                Icons.open_in_new,
+                                size: 16,
+                              ),
+                              label: const Text('Релизы на GitHub'),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            // Основная область контента
-            Expanded(
-              child: TabBarView(
-                children: [
-                  const PdfSplitTab(),
-                  const PdfMergeTab(),
-                ],
-              ),
-            ),
-            // Футер той же высоты, пока пустой
-            SizedBox(
-              height: _headerFooterHeight,
-              child: Container(
-                color: _footerColor,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+            if (_isProcessing)
+              Container(
+                color: Colors.black54,
                 child: Center(
-                  child: kIsWeb
-                      ? TextButton.icon(
-                          onPressed: () => _openReleases(context),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.brown.shade700,
-                          ),
-                          icon: const Icon(
-                            Icons.open_in_new,
-                            size: 16,
-                          ),
-                          label: const Text('Релизы на GitHub'),
-                        )
-                      : const SizedBox.shrink(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Идёт разбиение...',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(color: Colors.white),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -110,7 +182,9 @@ class HomeScreen extends StatelessWidget {
 }
 
 class PdfSplitTab extends StatefulWidget {
-  const PdfSplitTab({super.key});
+  const PdfSplitTab({super.key, required this.onProcessingChanged});
+
+  final void Function(bool) onProcessingChanged;
 
   @override
   State<PdfSplitTab> createState() => _PdfSplitTabState();
@@ -309,6 +383,7 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
     setState(() {
       _isSplitting = true;
     });
+    widget.onProcessingChanged(true);
 
     // Даём фреймворку отрисовать изменение UI (кнопка, индикатор прогресса)
     // перед началом тяжёлой синхронной работы.
@@ -316,12 +391,14 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
 
     try {
       final sourceBytes = _fileBytesWeb!;
-      final document = PdfDocument(inputBytes: sourceBytes);
-      final totalPages = document.pages.count;
-
       final baseName = _fileName != null
           ? p.basenameWithoutExtension(_fileName!)
           : 'document';
+
+      // На вебе compute() не создаёт настоящий изолят, поэтому обрабатываем
+      // по одному диапазону за раз с паузами для обновления UI
+      final document = PdfDocument(inputBytes: sourceBytes);
+      final totalPages = document.pages.count;
 
       var index = 1;
       final results = <_SplitResult>[];
@@ -339,6 +416,7 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
         final outDoc = PdfDocument();
         outDoc.pageSettings.margins.all = 0;
 
+        // Обрабатываем страницы по одной с паузами, чтобы UI мог обновляться
         for (var pageNum = from; pageNum <= lastPage; pageNum++) {
           final originalPage = document.pages[pageNum - 1];
           final template = originalPage.createTemplate();
@@ -349,6 +427,10 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
             const Offset(0, 0),
             Size(pageSize.width, pageSize.height),
           );
+
+          // Даём UI обновиться после каждой страницы
+          // Используем небольшую задержку, чтобы браузер успел отрисовать кадр
+          await Future<void>.delayed(const Duration(milliseconds: 10));
         }
 
         final outBytes = await outDoc.save();
@@ -356,10 +438,13 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
 
         final indexStr = index.toString().padLeft(3, '0');
         final fileName =
-            '${baseName}_$indexStr' '_${from}-${lastPage}.pdf'; // e.g. doc_001_1-3.pdf
+            '${baseName}_$indexStr' '_${from}-${lastPage}.pdf';
 
         results.add(_SplitResult(fileName: fileName, bytes: outBytes));
         index++;
+
+        // Даём UI обновиться между диапазонами
+        await Future<void>.delayed(const Duration(milliseconds: 10));
       }
 
       document.dispose();
@@ -400,7 +485,9 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
                         result.bytes,
                       ),
                       icon: const Icon(Icons.download),
-                      label: Text(result.fileName),
+                      label: Text(
+                        '${result.fileName} (${_formatSizeMb(result.bytes.length)})',
+                      ),
                     ),
                   ),
                 ],
@@ -438,6 +525,7 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
         setState(() {
           _isSplitting = false;
         });
+        widget.onProcessingChanged(false);
       }
     }
   }
@@ -508,62 +596,25 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
     setState(() {
       _isSplitting = true;
     });
+    widget.onProcessingChanged(true);
 
     // Даём отрисоваться изменениям UI перед началом тяжёлой работы.
     await Future<void>.delayed(const Duration(milliseconds: 100));
 
     try {
       final sourceBytes = await sourceFile.readAsBytes();
-      final document = PdfDocument(inputBytes: sourceBytes);
-      final totalPages = document.pages.count;
-
-      final dirPath = outDirPath;
       final baseName = p.basenameWithoutExtension(sourceFile.path);
 
-      var index = 1;
-      final createdFiles = <String>[];
+      // Конвертируем диапазоны в сериализуемый формат
+      final rangesMap = validRanges
+          .map((r) => {'from': r.from!, 'to': r.to!})
+          .toList();
 
-      for (final range in validRanges) {
-        final from = range.from!;
-        final to = range.to!;
+      final params = _SplitDesktopParams(
+          sourceBytes, rangesMap, outDirPath, baseName);
 
-        if (from > totalPages) {
-          continue;
-        }
-
-        final lastPage = to > totalPages ? totalPages : to;
-
-        final outDoc = PdfDocument();
-        outDoc.pageSettings.margins.all = 0;
-
-        for (var pageNum = from; pageNum <= lastPage; pageNum++) {
-          final originalPage = document.pages[pageNum - 1];
-          final template = originalPage.createTemplate();
-          final newPage = outDoc.pages.add();
-          final pageSize = newPage.getClientSize();
-          newPage.graphics.drawPdfTemplate(
-            template,
-            const Offset(0, 0),
-            Size(pageSize.width, pageSize.height),
-          );
-        }
-
-        final outBytes = await outDoc.save();
-        outDoc.dispose();
-
-        final indexStr = index.toString().padLeft(3, '0');
-        final fileName =
-            '${baseName}_$indexStr' '_${from}-${lastPage}.pdf'; // e.g. doc_001_1-3.pdf
-        final outPath = p.join(dirPath, fileName);
-
-        final outFile = File(outPath);
-        await outFile.writeAsBytes(outBytes, flush: true);
-
-        createdFiles.add(outPath);
-        index++;
-      }
-
-      document.dispose();
+      // Выполняем в фоновом изоляте
+      final createdFiles = await compute(_splitPdfDesktopTask, params);
 
       if (createdFiles.isEmpty) {
         if (mounted) {
@@ -595,15 +646,34 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
                   children: [
                     const Text('Папка:'),
                     const SizedBox(height: 4),
-                    Text(
-                      dirPath,
-                      style: Theme.of(context).textTheme.bodySmall,
+                    InkWell(
+                      onTap: () => _openFolderInFileManager(outDirPath),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              outDirPath,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.blue,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.folder_open, size: 16, color: Colors.blue),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 12),
                     const Text('Файлы:'),
                     const SizedBox(height: 8),
                     ...createdFiles.map(
-                      (path) => Text('• ${p.basename(path)}'),
+                      (path) {
+                        final file = File(path);
+                        final sizeBytes = file.lengthSync();
+                        final sizeText = _formatSizeMb(sizeBytes);
+                        return Text('• ${p.basename(path)} ($sizeText)');
+                      },
                     ),
                   ],
                 ),
@@ -641,6 +711,7 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
         setState(() {
           _isSplitting = false;
         });
+        widget.onProcessingChanged(false);
       }
     }
   }
@@ -662,7 +733,7 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
               ),
             ),
           ),
-          if (_isLoadingInfo || _isSplitting) ...[
+          if (_isLoadingInfo) ...[
             const SizedBox(height: 12),
             Row(
               children: [
@@ -673,9 +744,7 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  _isLoadingInfo
-                      ? 'Читаем файл...'
-                      : 'Разбиваем PDF, подождите...',
+                  'Читаем файл...',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ],
@@ -729,6 +798,11 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
     );
   }
 
+  String _formatSizeMb(int bytes) {
+    final mb = bytes / (1024 * 1024);
+    return '${mb.toStringAsFixed(2)} МБ';
+  }
+
   List<Widget> _buildRangeFields(BuildContext context) {
     final pageCount = _pageCount;
 
@@ -762,6 +836,12 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
                   }
                   return null;
                 },
+                onChanged: (value) {
+                  // Обновляем значение сразу при изменении
+                  range.from = int.tryParse(value.trim());
+                  // Запускаем повторную валидацию формы
+                  _formKey.currentState?.validate();
+                },
                 onSaved: (value) {
                   range.from = int.tryParse(value?.trim() ?? '');
                 },
@@ -790,6 +870,12 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
                     return 'Должно быть ≥ ${range.from}';
                   }
                   return null;
+                },
+                onChanged: (value) {
+                  // Обновляем значение сразу при изменении
+                  range.to = int.tryParse(value.trim());
+                  // Запускаем повторную валидацию формы
+                  _formKey.currentState?.validate();
                 },
                 onSaved: (value) {
                   range.to = int.tryParse(value?.trim() ?? '');
@@ -1159,9 +1245,23 @@ class _PdfMergeTabState extends State<PdfMergeTab> {
               children: [
                 const Text('Папка:'),
                 const SizedBox(height: 4),
-                Text(
-                  outDirPath,
-                  style: Theme.of(context).textTheme.bodySmall,
+                InkWell(
+                  onTap: () => _openFolderInFileManager(outDirPath),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          outDirPath,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.blue,
+                                decoration: TextDecoration.underline,
+                              ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.folder_open, size: 16, color: Colors.blue),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
                 const Text('Файл:'),
@@ -1374,5 +1474,65 @@ class _PdfMergeTabState extends State<PdfMergeTab> {
       ),
     );
   }
+}
+
+// -----------------------------------------------------------------------------
+// Вспомогательные классы и функции для фоновой обработки (Isolates)
+// -----------------------------------------------------------------------------
+
+class _SplitDesktopParams {
+  final Uint8List bytes;
+  final List<Map<String, int>> ranges;
+  final String outDirPath;
+  final String baseName;
+
+  _SplitDesktopParams(this.bytes, this.ranges, this.outDirPath, this.baseName);
+}
+
+Future<List<String>> _splitPdfDesktopTask(_SplitDesktopParams params) async {
+  final document = PdfDocument(inputBytes: params.bytes);
+  final totalPages = document.pages.count;
+  final createdFiles = <String>[];
+  var index = 1;
+
+  for (final range in params.ranges) {
+    final from = range['from']!;
+    final to = range['to']!;
+
+    if (from > totalPages) continue;
+    final lastPage = to > totalPages ? totalPages : to;
+
+    final outDoc = PdfDocument();
+    outDoc.pageSettings.margins.all = 0;
+
+    for (var pageNum = from; pageNum <= lastPage; pageNum++) {
+      final originalPage = document.pages[pageNum - 1];
+      final template = originalPage.createTemplate();
+      final newPage = outDoc.pages.add();
+      final pageSize = newPage.getClientSize();
+      newPage.graphics.drawPdfTemplate(
+        template,
+        const Offset(0, 0),
+        Size(pageSize.width, pageSize.height),
+      );
+    }
+
+    final outBytes = await outDoc.save();
+    outDoc.dispose();
+
+    final indexStr = index.toString().padLeft(3, '0');
+    final fileName =
+        '${params.baseName}_$indexStr' '_${from}-${lastPage}.pdf';
+    final outPath = p.join(params.outDirPath, fileName);
+
+    final outFile = File(outPath);
+    await outFile.writeAsBytes(outBytes, flush: true);
+
+    createdFiles.add(outPath);
+    index++;
+  }
+
+  document.dispose();
+  return createdFiles;
 }
 
