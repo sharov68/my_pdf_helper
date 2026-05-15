@@ -1,10 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import 'releases_link_stub.dart'
-    if (dart.library.html) 'releases_link_web.dart' as impl;
+const String _releasesPageUrl =
+    'https://github.com/sharov68/my_pdf_helper/releases';
 
-Future<void> openReleasesLink(BuildContext context) {
-  return impl.openReleasesLink(context);
+Future<void> openExternalUrl(BuildContext context, String url) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Некорректная ссылка.'),
+        duration: Duration(seconds: 4),
+      ),
+    );
+    return;
+  }
+
+  try {
+    final launched = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось открыть ссылку.'),
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
+  } catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Ошибка при открытии ссылки: $e'),
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
 }
 
-
+Future<void> openReleasesLink(BuildContext context) {
+  return openExternalUrl(context, _releasesPageUrl);
+}

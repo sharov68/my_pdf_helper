@@ -6,8 +6,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'package:url_launcher/link.dart';
+
 import 'download_helper.dart' as download_helper;
-import 'releases_link.dart';
+import 'releases_link.dart' show openReleasesLink;
 
 void main() {
   runApp(const MyApp());
@@ -89,6 +91,121 @@ class _HomeScreenState extends State<HomeScreen> {
     await openReleasesLink(context);
   }
 
+  Future<void> _showDeveloperContactsDialog(BuildContext context) async {
+    const email = 'sharov6820@yandex.ru';
+    const maxIconUrl = 'https://balashovsanek.ddns.net/images/max.webp';
+    const maxProfileUrl =
+        'https://max.ru/u/f9LHodD0cOJ1z68zPkvyA_36RYr8Tm1kZ6a5qI5RSW-69WtJ6_QxMjTcWKA';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Контакты'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Как на статическом сайте: настоящий <a href="mailto:..."> (url_launcher Link).
+                Link(
+                  uri: Uri.parse('mailto:$email'),
+                  target: LinkTarget.self,
+                  builder: (linkContext, followLink) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.mail_outline,
+                          color: Colors.brown.shade700,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                foregroundColor: Theme.of(linkContext)
+                                    .colorScheme
+                                    .primary,
+                              ),
+                              onPressed: followLink,
+                              child: Text(
+                                email,
+                                style: const TextStyle(
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                Link(
+                  uri: Uri.parse(maxProfileUrl),
+                  target: LinkTarget.blank,
+                  builder: (linkContext, followLink) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Image.network(
+                          maxIconUrl,
+                          width: 24,
+                          height: 24,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.chat_bubble_outline,
+                            color: Colors.brown.shade700,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                foregroundColor: Theme.of(linkContext)
+                                    .colorScheme
+                                    .primary,
+                              ),
+                              onPressed: followLink,
+                              child: Text(
+                                'Профиль в MAX',
+                                style: const TextStyle(
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Закрыть'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _setProcessing(bool value) {
     setState(() {
       _isProcessing = value;
@@ -135,16 +252,37 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Center(
                       child: kIsWeb
-                          ? TextButton.icon(
-                              onPressed: () => _openReleases(context),
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.brown.shade700,
-                              ),
-                              icon: const Icon(
-                                Icons.open_in_new,
-                                size: 16,
-                              ),
-                              label: const Text('Релизы на GitHub'),
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: () => _openReleases(context),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.brown.shade700,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.open_in_new,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Релизы на GitHub'),
+                                ),
+                                const SizedBox(width: 16),
+                                TextButton.icon(
+                                  onPressed: () =>
+                                      _showDeveloperContactsDialog(context),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.brown.shade700,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.person_outline,
+                                    size: 16,
+                                  ),
+                                  label: const Text(
+                                    'Develop by Alexey Sharov',
+                                  ),
+                                ),
+                              ],
                             )
                           : const SizedBox.shrink(),
                     ),
