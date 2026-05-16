@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -18,10 +19,12 @@ Future<void> openExternalUrl(BuildContext context, String url) async {
   }
 
   try {
-    final launched = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final isMailOrTel = uri.scheme == 'mailto' || uri.scheme == 'tel';
+    // На вебе mailto/tel с externalApplication иногда не открывают клиент.
+    final mode = kIsWeb && isMailOrTel
+        ? LaunchMode.platformDefault
+        : LaunchMode.externalApplication;
+    final launched = await launchUrl(uri, mode: mode);
     if (!launched && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

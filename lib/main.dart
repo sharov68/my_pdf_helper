@@ -6,10 +6,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
-import 'package:url_launcher/link.dart';
 
 import 'download_helper.dart' as download_helper;
-import 'releases_link.dart' show openReleasesLink;
+import 'releases_link.dart' show openExternalUrl, openReleasesLink;
 
 /// Текст пользовательского соглашения (открытый код, MIT — см. репозиторий на GitHub).
 const String _userAgreementText = '''
@@ -217,90 +216,84 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Как на статическом сайте: настоящий <a href="mailto:..."> (url_launcher Link).
-                Link(
-                  uri: Uri.parse('mailto:$email'),
-                  target: LinkTarget.self,
-                  builder: (linkContext, followLink) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.mail_outline,
-                          color: Colors.brown.shade700,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton(
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                foregroundColor: Theme.of(linkContext)
-                                    .colorScheme
-                                    .primary,
-                              ),
-                              onPressed: followLink,
-                              child: Text(
-                                email,
-                                style: const TextStyle(
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
+                // Без url_launcher Link: PlatformView внутри AlertDialog на вебе
+                // даёт Uncaught Error при клике; открываем через launchUrl.
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.mail_outline,
+                      color: Colors.brown.shade700,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            foregroundColor: Theme.of(dialogContext)
+                                .colorScheme
+                                .primary,
+                          ),
+                          onPressed: () => openExternalUrl(
+                            dialogContext,
+                            'mailto:$email',
+                          ),
+                          child: Text(
+                            email,
+                            style: const TextStyle(
+                              decoration: TextDecoration.underline,
                             ),
                           ),
                         ),
-                      ],
-                    );
-                  },
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
-                Link(
-                  uri: Uri.parse(maxProfileUrl),
-                  target: LinkTarget.blank,
-                  builder: (linkContext, followLink) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Image.network(
-                          maxIconUrl,
-                          width: 24,
-                          height: 24,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => Icon(
-                            Icons.chat_bubble_outline,
-                            color: Colors.brown.shade700,
-                            size: 24,
+                // То же: без Link в диалоге (см. комментарий выше).
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Image.network(
+                      maxIconUrl,
+                      width: 24,
+                      height: 24,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Icon(
+                        Icons.chat_bubble_outline,
+                        color: Colors.brown.shade700,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            foregroundColor: Theme.of(dialogContext)
+                                .colorScheme
+                                .primary,
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton(
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                foregroundColor: Theme.of(linkContext)
-                                    .colorScheme
-                                    .primary,
-                              ),
-                              onPressed: followLink,
-                              child: Text(
-                                'Профиль в MAX',
-                                style: const TextStyle(
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
+                          onPressed: () =>
+                              openExternalUrl(dialogContext, maxProfileUrl),
+                          child: const Text(
+                            'Профиль в MAX',
+                            style: TextStyle(
+                              decoration: TextDecoration.underline,
                             ),
                           ),
                         ),
-                      ],
-                    );
-                  },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
