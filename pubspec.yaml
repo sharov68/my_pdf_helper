@@ -40,6 +40,7 @@ dependencies:
   path: ^1.9.0
   syncfusion_flutter_pdf: ^26.1.35
   url_launcher: ^6.3.2
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:
