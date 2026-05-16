@@ -1,49 +1,12 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-const String _releasesPageUrl =
-    'https://github.com/sharov68/my_pdf_helper/releases';
+import 'releases_link_io.dart'
+    if (dart.library.html) 'releases_link_html.dart' as impl;
 
-Future<void> openExternalUrl(BuildContext context, String url) async {
-  final uri = Uri.tryParse(url);
-  if (uri == null) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Некорректная ссылка.'),
-        duration: Duration(seconds: 4),
-      ),
-    );
-    return;
-  }
-
-  try {
-    final isMailOrTel = uri.scheme == 'mailto' || uri.scheme == 'tel';
-    // На вебе mailto/tel с externalApplication иногда не открывают клиент.
-    final mode = kIsWeb && isMailOrTel
-        ? LaunchMode.platformDefault
-        : LaunchMode.externalApplication;
-    final launched = await launchUrl(uri, mode: mode);
-    if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Не удалось открыть ссылку.'),
-          duration: Duration(seconds: 5),
-        ),
-      );
-    }
-  } catch (e) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Ошибка при открытии ссылки: $e'),
-        duration: const Duration(seconds: 5),
-      ),
-    );
-  }
+Future<void> openExternalUrl(BuildContext context, String url) {
+  return impl.openExternalUrl(context, url);
 }
 
 Future<void> openReleasesLink(BuildContext context) {
-  return openExternalUrl(context, _releasesPageUrl);
+  return impl.openReleasesLink(context);
 }
