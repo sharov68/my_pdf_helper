@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
+import 'app_theme.dart';
 import 'download_helper.dart' as download_helper;
 import 'releases_link.dart' show openExternalUrl, openReleasesLink;
 
@@ -118,20 +119,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'My PDF Helper',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.orange,
-          brightness: Brightness.light,
-        ),
-        scaffoldBackgroundColor: Colors.white,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.orange,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: true,
-        ),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light(),
       home: const HomeScreen(),
     );
   }
@@ -146,7 +134,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   static const double _headerFooterHeight = kTextTabBarHeight;
-  static const Color _footerColor = Color(0xFFFFF3E0);
 
   bool _isProcessing = false;
 
@@ -223,7 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Icon(
                       Icons.mail_outline,
-                      color: Colors.brown.shade700,
+                      color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -265,7 +252,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => Icon(
                         Icons.chat_bubble_outline,
-                        color: Colors.brown.shade700,
+                        color: Theme.of(dialogContext)
+                            .colorScheme
+                            .onSurfaceVariant,
                         size: 24,
                       ),
                     ),
@@ -317,6 +306,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -328,9 +319,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 SizedBox(
                   height: _headerFooterHeight,
                   child: Material(
-                    color: Theme.of(context).appBarTheme.backgroundColor,
+                    color: colorScheme.primary,
                     child: const TabBar(
-                      indicatorColor: Colors.white,
                       tabs: [
                         Tab(text: 'Разбиение PDF'),
                         Tab(text: 'Слияние PDF'),
@@ -351,8 +341,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 SizedBox(
                   height: _headerFooterHeight,
                   child: Container(
-                    color: _footerColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    color: colorScheme.surfaceContainerHighest,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
                     child: Center(
                       child: kIsWeb
                           ? Row(
@@ -363,7 +355,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   onPressed: () =>
                                       _showUserAgreementDialog(context),
                                   style: TextButton.styleFrom(
-                                    foregroundColor: Colors.brown.shade700,
+                                    foregroundColor: context.footerButtonColor,
                                   ),
                                   icon: const Icon(
                                     Icons.description_outlined,
@@ -378,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   onPressed: () =>
                                       _showPrivacyPolicyDialog(context),
                                   style: TextButton.styleFrom(
-                                    foregroundColor: Colors.brown.shade700,
+                                    foregroundColor: context.footerButtonColor,
                                   ),
                                   icon: const Icon(
                                     Icons.privacy_tip_outlined,
@@ -392,7 +384,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 TextButton.icon(
                                   onPressed: () => _openReleases(context),
                                   style: TextButton.styleFrom(
-                                    foregroundColor: Colors.brown.shade700,
+                                    foregroundColor: context.footerButtonColor,
                                   ),
                                   icon: const Icon(
                                     Icons.open_in_new,
@@ -405,7 +397,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   onPressed: () =>
                                       _showDeveloperContactsDialog(context),
                                   style: TextButton.styleFrom(
-                                    foregroundColor: Colors.brown.shade700,
+                                    foregroundColor: context.footerButtonColor,
                                   ),
                                   icon: const Icon(
                                     Icons.person_outline,
@@ -424,22 +416,23 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             if (_isProcessing)
-              Container(
-                color: Colors.black54,
+              ColoredBox(
+                color: colorScheme.scrim.withValues(alpha: 0.45),
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          colorScheme.onPrimary,
+                        ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: AppSpacing.lg),
                       Text(
                         'Идёт разбиение...',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(color: Colors.white),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: colorScheme.onPrimary,
+                            ),
                       ),
                     ],
                   ),
@@ -924,14 +917,15 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
                           Expanded(
                             child: Text(
                               outDirPath,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.blue,
-                                    decoration: TextDecoration.underline,
-                                  ),
+                              style: context.linkTextStyle,
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const Icon(Icons.folder_open, size: 16, color: Colors.blue),
+                          Icon(
+                            Icons.folder_open,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
                         ],
                       ),
                     ),
@@ -989,14 +983,16 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton.icon(
+            child: OutlinedButton.icon(
               onPressed: _isLoadingInfo || _isSplitting ? null : _pickPdf,
               icon: const Icon(Icons.picture_as_pdf),
               label: Text(
@@ -1005,7 +1001,7 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
             ),
           ),
           if (_isLoadingInfo) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             Row(
               children: [
                 const SizedBox(
@@ -1013,7 +1009,7 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppSpacing.md),
                 Text(
                   'Читаем файл...',
                   style: Theme.of(context).textTheme.bodyMedium,
@@ -1022,14 +1018,31 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
             ),
           ],
           if (_fileName != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Файл: $_fileName'
-              '${_pageCount != null ? ' (страниц: $_pageCount)' : ''}',
-              style: Theme.of(context).textTheme.bodyMedium,
+            const SizedBox(height: AppSpacing.md),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.insert_drive_file_outlined,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Text(
+                        'Файл: $_fileName'
+                        '${_pageCount != null ? ' (страниц: $_pageCount)' : ''}',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.xl),
           Form(
             key: _formKey,
             child: Column(
@@ -1037,11 +1050,13 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
               children: [
                 Text(
                   'Диапазоны страниц',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.md),
                 ..._buildRangeFields(context),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
@@ -1050,7 +1065,7 @@ class _PdfSplitTabState extends State<PdfSplitTab> {
                     label: const Text('Добавить диапазон'),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xl),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
@@ -1523,14 +1538,15 @@ class _PdfMergeTabState extends State<PdfMergeTab> {
                       Expanded(
                         child: Text(
                           outDirPath,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.blue,
-                                decoration: TextDecoration.underline,
-                              ),
+                          style: context.linkTextStyle,
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.folder_open, size: 16, color: Colors.blue),
+                      Icon(
+                        Icons.folder_open,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ],
                   ),
                 ),
@@ -1703,14 +1719,16 @@ class _PdfMergeTabState extends State<PdfMergeTab> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton.icon(
+            child: OutlinedButton.icon(
               onPressed: _isScanning || _isMerging ? null : _pickFolderAndScan,
               icon: const Icon(Icons.folder),
               label: Text(
@@ -1720,27 +1738,45 @@ class _PdfMergeTabState extends State<PdfMergeTab> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          if (_directoryPath != null)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Последняя выбранная папка:',
-                  style: Theme.of(context).textTheme.titleSmall,
+          if (_directoryPath != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.folder_outlined,
+                          color: colorScheme.primary,
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Text(
+                          'Последняя выбранная папка',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      _directoryPath!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Найдено PDF‑файлов: $_lastFoundFilesCount',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  _directoryPath!,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Найдено PDF‑файлов: $_lastFoundFilesCount',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
+              ),
             ),
+          ],
         ],
       ),
     );

@@ -41,6 +41,7 @@ dependencies:
   syncfusion_flutter_pdf: ^26.1.35
   url_launcher: ^6.3.2
   web: ^1.1.1
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
